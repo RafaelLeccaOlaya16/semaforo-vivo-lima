@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SemáforoVivo Lima – Simulador</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f4f6f8;color:#1d2733}
+  header{background:#0f3d5e;color:#fff;padding:12px 20px}
+  header h1{margin:0;font-size:20px} header p{margin:2px 0 0;font-size:13px;opacity:.85}
+  main{display:flex;flex-wrap:wrap;gap:16px;padding:16px}
+  .card{background:#fff;border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  canvas{display:block;border-radius:6px}
+  .controls{width:300px} .controls label{display:block;font-size:13px;margin-top:10px}
+  input[type=range]{width:100%}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+  td,th{border-bottom:1px solid #e1e5ea;padding:6px;text-align:left}
+  .win{color:#16804a;font-weight:bold}
+  button{margin-top:12px;padding:8px 12px;border:0;border-radius:6px;background:#0f3d5e;color:#fff;cursor:pointer}
+  .tag{display:inline-block;font-size:11px;padding:2px 6px;border-radius:4px;background:#ffe9b3;margin-left:4px}
+  #log{font-size:12px;max-height:120px;overflow:auto;background:#f7f9fb;padding:6px;margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>SemáforoVivo Lima – simulador de semáforo adaptativo</h1>
+  <p>Prototipo de demostración. Datos simulados: llegadas aleatorias con las tasas que elijas.</p>
+</header>
+<main>
+  <div class="card"><canvas id="cv" width="520" height="520"></canvas></div>
+  <div class="card controls">
+    <strong>Tráfico</strong>
+    <label>Calle A (norte-sur): <span id="vA"></span> veh/min</label>
+    <input id="rA" type="range" min="2" max="40" value="24">
+    <label>Calle B (este-oeste): <span id="vB"></span> veh/min</label>
+    <input id="rB" type="range" min="2" max="40" value="8">
+    <label>% de motos y mototaxis: <span id="vM"></span>%</label>
+    <input id="rM" type="range" min="0" max="80" value="40">
+    <label><input id="amb" type="checkbox"> Ambulante o carro parado en calle A <span class="tag">-40% capacidad</span></label>
+    <label><input id="emer" type="checkbox"> Emergencia: ambulancia en calle B <span class="tag">simulado</span></label>
+    <label>Velocidad: <span id="vS"></span>x</label>
+    <input id="rS" type="range" min="1" max="20" value="5">
+    <button id="reset">Reiniciar</button>
+    <table>
+      <tr><th></th><th>Tiempo fijo<br>(30 s / 30 s)</th><th>Adaptativo</th></tr>
+      <tr><td>Espera promedio</td><td id="wF">-</td><td id="wA">-</td></tr>
+      <tr><td>Cola máxima</td><td id="qF">-</td><td id="qA">-</td></tr>
+      <tr><td>Vehículos atendidos</td><td id="sF">-</td><td id="sA">-</td></tr>
+    </table>
+    <div id="log"></div>
+  </div>
+</main>
+<script>
+// Parámetros (supuestos a calibrar)
+const WEIGHT = {moto:0.5, auto:1, combi:2.5};   // espacio que ocupa cada tipo
+const GMIN = 10, GMAX = 60, ALFA = 1.5, AMBAR = 3, MAX_RED = 120, FIXED = 30;
+const SAT = 0.5;  // unidades de carga que salen por segundo con verde
+
+const $ = id => document.getElementById(id);
+let t, simF, simA;
+
+function newSim(adaptive){
+  return {adaptive, q:[[],[]], green:0, phase:'green', left:FIXED, redTime:[0,0],
+          cap:[0,0], waitSum:0, served:0, maxQ:0};
+}
+function reset(){ t=0; simF=newSim(false); simA=newSim(true); simA.left=GMIN; $('log').innerHTML=''; }
+function log(msg){ $('log').innerHTML = `<div>t=${t}s: ${msg}</div>` + $('log').innerHTML; }
+
+function randomVehicle(){
+  const r=Math.random(), pm=+$('rM').value/100;
+  return r<pm ? 'moto' : (r<pm+(1-pm)*0.15 ? 'combi' : 'auto');
+}
+function load(q){ return q.reduce((s,v)=>s+WEIGHT[v.type],0); }
+
+function greenFor(sim, i){
+  return Math.min(GMAX, Math.round(GMIN + ALFA*load(sim.q[i])));
+}
+
+function step(sim, arrivals){
+  arrivals.forEach((list,i)=>list.forEach(type=>sim.q[i].push({type,t0:t})));
+  const g = sim.green;
+  if(sim.phase==='green'){
+    let rate = SAT * (g===0 && $('amb').checked ? 0.6 : 1);
+    sim.cap[g] += rate;
+    while(sim.q[g].length && sim.cap[g] >= WEIGHT[sim.q[g][0].type]){
+      const v=sim.q[g].shift(); sim.cap[g]-=WEIGHT[v.type];
+      sim.waitSum += t - v.t0; sim.served++;
+    }
+    if(!sim.q[g].length) sim.cap[g]=0;
+  }
+  sim.redTime[1-g]++; sim.redTime[g]=0;
+  sim.maxQ = Math.max(sim.maxQ, sim.q[0].length, sim.q[1].length);
+  sim.left--;
+  if(sim.left>0) return;
+  if(sim.phase==='green'){ sim.phase='ambar'; sim.left=AMBAR; return; }
+  // cambio de fase
+  sim.green = 1-g; sim.phase='green';
+  if(!sim.adaptive){ sim.left=FIXED; return; }
+  let gt = greenFor(sim, sim.green);
+  if(sim.green===1 && $('emer').checked){ gt=GMAX; log('Emergencia: verde máximo para calle B'); }
+  sim.left = gt;
+  log(`Verde para calle ${'AB'[sim.green]}: ${gt} s (carga ${load(sim.q[sim.green]).toFixed(1)})`);
+}
+
+function tick(){
+  t++;
+  const arrivals=[[],[]];
+  ['rA','rB'].forEach((id,i)=>{ if(Math.random() < +$(id).value/60) arrivals[i].push(randomVehicle()); });
+  step(simF, arrivals); step(simA, arrivals);
+  // regla anti-espera: si una calle supera MAX_RED en rojo, se corta el verde actual
+  if(simA.phase==='green' && simA.redTime[1-simA.green] >= MAX_RED && simA.left>AMBAR){ simA.left=1; log('Tope de espera alcanzado: se cambia de fase'); }
+}
+
+function fmt(sim){ return sim.served ? (sim.waitSum/sim.served).toFixed(1)+' s' : '-'; }
+function updateTable(){
+  $('wF').textContent=fmt(simF); $('wA').textContent=fmt(simA);
+  $('qF').textContent=simF.maxQ; $('qA').textContent=simA.maxQ;
+  $('sF').textContent=simF.served; $('sA').textContent=simA.served;
+  const a=simA.waitSum/Math.max(1,simA.served), f=simF.waitSum/Math.max(1,simF.served);
+  $('wA').className = a<f ? 'win':''; $('wF').className = f<a ? 'win':'';
+}
+
+// Dibujo
+const cv=$('cv'), c=cv.getContext('2d'), W=520, R=70;
+const COLOR={moto:'#f39c12',auto:'#2e86de',combi:'#8e44ad'};
+const SIZE={moto:8,auto:14,combi:24};
+function light(x,y,state){
+  c.fillStyle='#222'; c.fillRect(x,y,22,58);
+  ['red','ambar','green'].forEach((s,k)=>{
+    c.beginPath(); c.arc(x+11,y+10+k*19,7,0,7);
+    c.fillStyle = state===s ? ({red:'#e74c3c',ambar:'#f1c40f',green:'#2ecc71'})[s] : '#555'; c.fill();
+  });
+}
+function draw(){
+  const s=simA, m=W/2;
+  c.fillStyle='#cfe3c8'; c.fillRect(0,0,W,W);
+  c.fillStyle='#555'; c.fillRect(m-R/2,0,R,W); c.fillRect(0,m-R/2,W,R);
+  c.strokeStyle='#ddd'; c.setLineDash([10,10]);
+  c.beginPath(); c.moveTo(m,0); c.lineTo(m,m-R/2); c.moveTo(0,m); c.lineTo(m-R/2,m); c.stroke(); c.setLineDash([]);
+  // zonas de conteo (no carriles)
+  c.fillStyle='rgba(255,255,255,.12)'; c.fillRect(m-R/2,0,R,m-R/2); c.fillRect(0,m-R/2,m-R/2,R);
+  c.fillStyle='#fff'; c.font='12px sans-serif';
+  c.fillText('Zona A',m+R/2+4,20); c.fillText('Zona B',8,m+R/2+14);
+  // cola calle A (desde el norte), vehículos dispersos para simular tráfico sin carriles
+  let y=m-R/2-6;
+  s.q[0].forEach((v,k)=>{ const L=SIZE[v.type]; y-=L+3; if(y<0) return;
+    c.fillStyle=COLOR[v.type]; c.fillRect(m-R/2+6+((k*37)%(R-20)),y,10,L); });
+  let x=m-R/2-6;
+  s.q[1].forEach((v,k)=>{ const L=SIZE[v.type]; x-=L+3; if(x<0) return;
+    c.fillStyle=COLOR[v.type]; c.fillRect(x,m-R/2+6+((k*29)%(R-20)),L,10); });
+  if($('amb').checked){ c.fillStyle='#c0392b'; c.fillRect(m+R/2-18,120,14,30); c.fillStyle='#fff'; c.fillText('ambulante',m+R/2+4,140); }
+  const stA = s.green===0 ? s.phase==='green'?'green':'ambar' : 'red';
+  const stB = s.green===1 ? s.phase==='green'?'green':'ambar' : 'red';
+  light(m+R/2+6,m-R/2-64,stA); light(m-R/2-64,m+R/2+6,stB);
+  c.fillStyle='#000'; c.font='bold 22px monospace';
+  c.fillText(String(s.left).padStart(2,'0'),m+R/2+34,m-R/2-26);
+  c.font='13px sans-serif';
+  c.fillText(`Adaptativo · t=${t}s · cola A=${s.q[0].length} · cola B=${s.q[1].length}`,10,W-12);
+  // leyenda
+  [['moto','moto/mototaxi'],['auto','auto'],['combi','combi/bus']].forEach(([k,n],i)=>{
+    c.fillStyle=COLOR[k]; c.fillRect(W-130,W-150+i*18,12,12); c.fillStyle='#000'; c.fillText(n,W-112,W-140+i*18); });
+}
+
+function labels(){ $('vA').textContent=$('rA').value; $('vB').textContent=$('rB').value;
+  $('vM').textContent=$('rM').value; $('vS').textContent=$('rS').value; }
+document.querySelectorAll('input').forEach(e=>e.addEventListener('input',labels));
+$('reset').onclick=reset;
+reset(); labels();
+setInterval(()=>{ for(let k=0;k<+$('rS').value;k++) tick(); updateTable(); draw(); }, 1000/2);
+</script>
+</body>
+</html>
