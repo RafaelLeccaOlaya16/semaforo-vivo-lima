@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reportes · SemáforoVivo Lima</title>
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<script src="js/comun.js"></script>
+<script>menu('reportes.html');</script>
+<div class="contenido">
+  <h2>Generador de reportes</h2>
+  <p class="nota no-imprimir">Elige qué simulaciones incluir. Luego imprime o guarda como PDF.</p>
+  <div class="caja no-imprimir" style="margin-bottom:14px">
+    <label style="max-width:420px">Intersección<select id="filtro"><option value="">Todas</option></select></label>
+    <button id="imprimir" class="verde">Imprimir / guardar PDF</button>
+    <button id="csv">Descargar CSV</button>
+    <button id="borrar" class="rojo">Borrar historial de simulaciones</button>
+  </div>
+  <div id="reporte"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+$('filtro').innerHTML+=INTERSECCIONES.map(i=>`<option value="${i.id}">${esc(i.nombre)}</option>`).join('')+'<option value="_">Personalizadas</option>';
+const elegidas=()=>{ const f=$('filtro').value; return simulaciones().filter(s=>!f||(f==='_'?!s.inter:s.inter===f)).sort((a,b)=>b.fecha-a.fecha); };
+const n1=v=>v==null?'-':v.toFixed(1);
+function pintar(){
+  const l=elegidas(), inc=incidencias();
+  if(!l.length){
+    $('reporte').innerHTML='<div class="caja"><p class="vacio">Aún no hay simulaciones guardadas. Ve al <a href="simulador.html">simulador</a>, pulsa «Comparar» y luego «Guardar resultado».</p></div>';
+    return;
+  }
+  const prom=(k,m)=>l.reduce((s,x)=>s+(x[m][k]||0),0)/l.length;
+  const mej=l.reduce((s,x)=>s+x.mejora,0)/l.length;
+  const ganadas=l.filter(x=>x.mejora>0).length;
+  const em=l.filter(x=>x.int.emergencia!=null&&x.fij.emergencia!=null);
+  const abiertas=inc.filter(x=>x.estado!=='resuelta');
+  $('reporte').innerHTML=`
+  <div class="caja" style="margin-bottom:14px">
+    <h3>Reporte de resultados · SemáforoVivo Lima</h3>
+    <p class="nota">Generado el ${fecha(Date.now())}. ${l.length} simulación(es) comparativa(s). Datos simulados, no mediciones reales.</p>
+    <div class="rejilla kpis">
+      <div class="kpi"><div class="etiqueta">Reducción promedio de espera</div><div class="valor">${mej.toFixed(0)}%</div></div>
+      <div class="kpi"><div class="etiqueta">Espera vehículos (intel. / fijo)</div><div class="valor">${n1(prom('espera','int'))} / ${n1(prom('espera','fij'))} s</div></div>
+      <div class="kpi"><div class="etiqueta">Espera peatones (intel. / fijo)</div><div class="valor">${n1(prom('peatones','int'))} / ${n1(prom('peatones','fij'))} s</div></div>
+      <div class="kpi"><div class="etiqueta">Casos donde gana el inteligente</div><div class="valor">${ganadas} de ${l.length}</div></div>
+    </div>
+    <h3>Conclusiones</h3>
+    <ul style="font-size:14px">
+      <li>El semáforo inteligente redujo la espera vehicular en ${ganadas} de ${l.length} escenarios, con una reducción promedio de ${mej.toFixed(0)}%.</li>
+      ${em.length?`<li>Las ambulancias esperaron en promedio ${n1(em.reduce((s,x)=>s+x.int.emergencia,0)/em.length)} s con el inteligente y ${n1(em.reduce((s,x)=>s+x.fij.emergencia,0)/em.length)} s con tiempo fijo.</li>`:''}
+      <li>Hay ${abiertas.length} incidencia(s) sin resolver que pueden afectar estos resultados.</li>
+    </ul>
+  </div>
+  <div class="caja" style="margin-bottom:14px">
+    <h3>Detalle por simulación</h3>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Fecha</th><th>Intersección</th><th>Duración</th><th>Espera vehículos (I / F)</th><th>Atendidos (I / F)</th><th>Cola máx. (I / F)</th><th>Espera peatones (I / F)</th><th>Ambulancias (I / F)</th><th>Mejora</th></tr></thead>
+      <tbody>${l.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${esc(x.nombre)}</td><td>${x.duracion/60} min</td>
+        <td>${n1(x.int.espera)} / ${n1(x.fij.espera)} s</td><td>${x.int.atendidos} / ${x.fij.atendidos}</td><td>${x.int.maxCola} / ${x.fij.maxCola}</td>
+        <td>${n1(x.int.peatones)} / ${n1(x.fij.peatones)} s</td><td>${n1(x.int.emergencia)} / ${n1(x.fij.emergencia)} s</td><td><b>${x.mejora.toFixed(0)}%</b></td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="nota">I = inteligente, F = tiempo fijo.</p>
+  </div>
+  <div class="caja">
+    <h3>Incidencias sin resolver</h3>
+    ${abiertas.length?`<table><thead><tr><th>Intersección</th><th>Tipo</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>${abiertas.map(x=>`<tr><td>${esc(porId(x.inter)?.nombre||x.inter)}</td><td>${esc(x.tipo)}</td><td>${esc(x.resp||'-')}</td><td>${ESTADOS[x.estado]}</td></tr>`).join('')}</tbody></table>`:'<p class="vacio">Ninguna.</p>'}
+  </div>`;
+}
+$('filtro').onchange=pintar;
+$('imprimir').onclick=()=>window.print();
+$('csv').onclick=()=>{
+  const cols=['fecha','interseccion','duracion_s','espera_int_s','espera_fijo_s','atendidos_int','atendidos_fijo','cola_max_int','cola_max_fijo','espera_peatones_int_s','espera_peatones_fijo_s','ambulancia_int_s','ambulancia_fijo_s','mejora_pct'];
+  const filas=elegidas().map(x=>[new Date(x.fecha).toISOString(),x.nombre,x.duracion,n1(x.int.espera),n1(x.fij.espera),x.int.atendidos,x.fij.atendidos,x.int.maxCola,x.fij.maxCola,n1(x.int.peatones),n1(x.fij.peatones),n1(x.int.emergencia),n1(x.fij.emergencia),x.mejora.toFixed(1)]);
+  const csv=[cols,...filas].map(f=>f.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'})); a.download='reporte-semaforovivo.csv'; a.click();
+};
+$('borrar').onclick=()=>{ if(confirm('¿Borrar todas las simulaciones guardadas?')){ guardar('sv_simulaciones',[]); pintar(); } };
+pintar();
+</script>
+</body>
+</html>

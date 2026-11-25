@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa · SemáforoVivo Lima</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/estilos.css">
+<style>
+#mapa{height:520px;border-radius:6px}
+.lista button{display:block;width:100%;text-align:left;margin:0 0 6px;background:#eef1f4;color:#1d2733}
+.lista button.aqui{background:#0f3d5e;color:#fff}
+</style>
+</head>
+<body>
+<script src="js/comun.js"></script>
+<script>menu('mapa.html');</script>
+<div class="contenido">
+  <h2>Mapa de intersecciones</h2>
+  <p class="nota">Toca un punto del mapa o un nombre de la lista para ver sus indicadores. El color indica el nivel de congestión.</p>
+  <div class="rejilla" style="grid-template-columns:minmax(0,2fr) minmax(280px,1fr)">
+    <div class="caja"><div id="mapa"></div></div>
+    <div>
+      <div class="caja lista" id="lista" style="margin-bottom:14px"></div>
+      <div class="caja" id="detalle"></div>
+    </div>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const colores={'n-alto':'#c0392b','n-medio':'#d68910','n-bajo':'#16804a'};
+let mapa=null, marcas={};
+function mostrar(id){
+  const i=porId(id), k=indicadores(i), n=nivel(k.espera);
+  const inc=incidencias().filter(x=>x.inter===id && x.estado!=='resuelta');
+  document.querySelectorAll('#lista button').forEach(b=>b.className=b.dataset.id===id?'aqui':'');
+  document.getElementById('detalle').innerHTML=`<h3>${esc(i.nombre)}</h3>
+    <p class="nota">${esc(i.distrito)} · Fuente: ${esc(k.fuente)}</p>
+    <table>
+      <tr><td>Congestión</td><td><span class="etq ${n.clase}">${n.texto}</span></td></tr>
+      <tr><td>Espera promedio de vehículos</td><td>${k.espera.toFixed(1)} s</td></tr>
+      <tr><td>Vehículos en espera</td><td>${Math.round(k.cola)}</td></tr>
+      <tr><td>Espera promedio de peatones</td><td>${k.peatones.toFixed(1)} s</td></tr>
+      <tr><td>Flujo calle A (autos/motos/combis por min)</td><td>${i.flujo.aa} / ${i.flujo.am} / ${i.flujo.ac}</td></tr>
+      <tr><td>Flujo calle B (autos/motos/combis por min)</td><td>${i.flujo.ba} / ${i.flujo.bm} / ${i.flujo.bc}</td></tr>
+      ${k.sim?`<tr><td>Mejora vs. tiempo fijo</td><td><b>${k.sim.mejora.toFixed(0)}%</b> menos espera</td></tr>`:''}
+      <tr><td>Incidencias abiertas</td><td>${inc.length?inc.map(x=>esc(x.tipo)).join(', '):'Ninguna'}</td></tr>
+    </table>
+    <a class="boton verde" href="simulador.html?i=${i.id}">Simular esta intersección</a>
+    <a class="boton" href="incidencias.html?i=${i.id}">Registrar incidencia</a>`;
+  if(mapa){ mapa.setView([i.lat,i.lng],15); marcas[id].openPopup(); }
+  history.replaceState(null,'','?i='+id);
+}
+document.getElementById('lista').innerHTML='<h3>Intersecciones</h3>'+INTERSECCIONES.map(i=>{
+  const n=nivel(indicadores(i).espera);
+  return `<button data-id="${i.id}"><span class="etq ${n.clase}">${n.texto}</span> ${esc(i.nombre)}</button>`;
+}).join('');
+document.querySelectorAll('#lista button').forEach(b=>b.onclick=()=>mostrar(b.dataset.id));
+
+if(window.L){
+  mapa=L.map('mapa').setView([-12.07,-77.05],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(mapa);
+  INTERSECCIONES.forEach(i=>{
+    const k=indicadores(i), n=nivel(k.espera);
+    marcas[i.id]=L.circleMarker([i.lat,i.lng],{radius:12,color:'#fff',weight:2,fillColor:colores[n.clase],fillOpacity:.9})
+      .addTo(mapa).bindPopup(`<b>${esc(i.nombre)}</b><br>Espera: ${k.espera.toFixed(1)} s`)
+      .on('click',()=>mostrar(i.id));
+  });
+  mapa.fitBounds(INTERSECCIONES.map(i=>[i.lat,i.lng]),{padding:[40,40]});
+} else {
+  document.getElementById('mapa').innerHTML='<p class="vacio">No se pudo cargar el mapa (sin internet). Usa la lista de la derecha.</p>';
+}
+mostrar(new URLSearchParams(location.search).get('i')||INTERSECCIONES[0].id);
+</script>
+</body>
+</html>

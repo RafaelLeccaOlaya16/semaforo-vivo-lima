@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador · SemáforoVivo Lima</title>
+<link rel="stylesheet" href="css/estilos.css">
+<style>
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f4f6f8;color:#1d2733}
+.titulo{max-width:1200px;margin:0 auto;padding:12px 16px 0}
+.titulo h1{margin:0;font-size:20px}
+.titulo p{margin:2px 0 0;font-size:13px;color:#5b6773}
+.panel h3{margin:14px 0 2px}
+.zona-comparar{max-width:1200px;margin:0 auto;padding:0 16px 16px}
+.zona-comparar .rejilla{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.ganador{color:#16804a;font-weight:bold}
+main{display:flex;flex-wrap:wrap;gap:16px;padding:16px;max-width:1200px;margin:0 auto;align-items:flex-start}
+.caja{background:#fff;border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+canvas{display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:6px;touch-action:manipulation}
+.dibujo{flex:1 1 420px;max-width:720px;min-width:0}
+.panel{flex:1 1 330px;max-width:420px;min-width:0}
+h3{margin:14px 0 2px;font-size:14px}
+label{display:block;font-size:13px;margin-top:8px}
+input[type=range]{width:100%}
+select{max-width:100%}
+button{margin:6px 6px 0 0;padding:7px 10px;border:0;border-radius:6px;background:#0f3d5e;color:#fff;cursor:pointer}
+button.activo{background:#16804a}
+button.emerg{background:#c0392b}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}
+td{border-bottom:1px solid #e1e5ea;padding:4px}
+#estado{font-weight:bold;font-size:13px;margin-top:10px;min-height:36px}
+#log{font-size:12px;max-height:90px;overflow:auto;background:#f7f9fb;padding:6px;margin-top:8px}
+@media (min-width:900px){ .dibujo{position:sticky;top:16px} }
+@media (max-width:640px){
+  .titulo{padding:8px 8px 0}
+  .titulo h1{font-size:17px}
+  .titulo p{font-size:12px}
+  main{padding:8px;gap:10px}
+  .zona-comparar{padding:0 8px 8px}
+  .caja{padding:10px}
+  .dibujo,.panel{flex:1 1 100%;max-width:100%}
+  button{padding:11px 14px;min-height:44px;font-size:14px}
+  label{font-size:14px}
+  input[type=range]{height:30px}
+  select{font-size:16px;min-height:38px}
+  table{font-size:14px}
+  #estado,#log{font-size:14px}
+  #log{max-height:120px}
+}
+</style>
+</head>
+<body>
+<script src="js/comun.js"></script>
+<script>menu('simulador.html');</script>
+<div class="titulo">
+  <h1>Simulador comparativo de semáforo inteligente</h1>
+  <p>Demostración con tráfico simulado. Las cifras son de la simulación, no de una calle real.</p>
+</div>
+<main>
+  <div class="caja dibujo"><canvas id="cv" width="520" height="520"></canvas></div>
+  <div class="caja panel">
+    <h3>Intersección</h3>
+    <select id="inter"><option value="">Personalizada (valores manuales)</option></select>
+
+    <h3>Modo del semáforo</h3>
+    <button id="mInt" class="activo">Inteligente (detecta)</button>
+    <button id="mFij">Automático (tiempo fijo)</button>
+
+    <h3>Calle A (principal, ambos sentidos; cifras por minuto en cada sentido)</h3>
+    <label>Autos por minuto: <b id="vaa"></b><input id="aa" type="range" min="0" max="30" value="8"></label>
+    <label>Motos por minuto: <b id="vam"></b><input id="am" type="range" min="0" max="30" value="6"></label>
+    <label>Combis o buses por minuto: <b id="vac"></b><input id="ac" type="range" min="0" max="10" value="1"></label>
+
+    <h3>Calle B (ambos sentidos; cifras por minuto en cada sentido)</h3>
+    <label>Autos por minuto: <b id="vba"></b><input id="ba" type="range" min="0" max="30" value="4"></label>
+    <label>Motos por minuto: <b id="vbm"></b><input id="bm" type="range" min="0" max="30" value="3"></label>
+    <label>Combis o buses por minuto: <b id="vbc"></b><input id="bc" type="range" min="0" max="10" value="0"></label>
+
+    <h3>Vehículo de emergencia</h3>
+    <label>Entra por la calle: <select id="emS"><option value="0">A</option><option value="1">B</option></select></label>
+    <label>Sentido: <select id="emD"><option value="0">Norte→sur / oeste→este</option><option value="1">Sur→norte / este→oeste</option></select></label>
+    <button class="emerg" data-veh="ambulancia">🚑 Ambulancia</button>
+    <button class="emerg" data-veh="bombero">🚒 Bomberos</button>
+    <button class="emerg" data-veh="policia">🚓 Policía</button>
+
+    <h3>Tiempos del semáforo (segundos, de 0 a 300)</h3>
+    <label>Verde mínimo (inteligente): <b id="vgmin"></b><input id="gmin" type="range" min="0" max="300" value="8"></label>
+    <label>Verde máximo (inteligente): <b id="vgmax"></b><input id="gmax" type="range" min="0" max="300" value="45"></label>
+    <label>Espera máxima en rojo (inteligente): <b id="vmred"></b><input id="mred" type="range" min="0" max="300" value="90"></label>
+    <label>Verde fijo por calle (automático): <b id="vfix"></b><input id="fix" type="range" min="0" max="300" value="25"></label>
+    <label>Ámbar: <b id="vamb"></b><input id="amb" type="range" min="0" max="300" value="3"></label>
+    <label>Todo en rojo entre cambios: <b id="vtod"></b><input id="tod" type="range" min="0" max="300" value="2"></label>
+
+    <h3>Peatones en las cebras (por minuto, en cada cebra)</h3>
+    <label>Caminan normal: <b id="vpn"></b><input id="pn" type="range" min="0" max="30" value="6"></label>
+    <label>Les cuesta caminar rápido (adulto mayor, bastón, silla de ruedas): <b id="vps"></b><input id="ps" type="range" min="0" max="30" value="2"></label>
+
+    <h3>Simulación</h3>
+    <label>Velocidad: <b id="vsp"></b>x<input id="sp" type="range" min="1" max="10" value="3"></label>
+    <button id="pau">Pausar</button><button id="rst">Reiniciar</button>
+
+    <div id="estado"></div>
+    <table>
+      <tr><td>Espera promedio (parado)</td><td id="wP">-</td></tr>
+      <tr><td>Vehículos atendidos</td><td id="sv">0</td></tr>
+      <tr><td>En espera en calle A</td><td id="qA">-</td></tr>
+      <tr><td>En espera en calle B</td><td id="qB">-</td></tr>
+      <tr><td>Última emergencia: espera</td><td id="eE">-</td></tr>
+      <tr><td>Peatones que cruzaron</td><td id="pC">0</td></tr>
+      <tr><td>Espera promedio de peatones</td><td id="pW">-</td></tr>
+      <tr><td>Peatones esperando</td><td id="pE">-</td></tr>
+    </table>
+    <div id="log"></div>
+  </div>
+</main>
+<section class="zona-comparar">
+  <div class="caja">
+    <h3>Comparar los dos métodos con el mismo tráfico</h3>
+    <p class="nota">Corre dos simulaciones con exactamente los mismos vehículos, peatones y 2 ambulancias: una con el semáforo inteligente y otra con tiempo fijo. Usa los valores del panel de arriba.</p>
+    <label style="max-width:260px">Duración simulada
+      <select id="dur"><option value="300">5 minutos</option><option value="600" selected>10 minutos</option><option value="1200">20 minutos</option></select></label>
+    <button id="cmp" class="activo">Comparar inteligente vs. tiempo fijo</button>
+    <button id="guardarCmp" disabled>Guardar resultado para el dashboard y reportes</button>
+    <span id="cmpEstado" class="nota"></span>
+    <div class="rejilla" id="cmpRes" style="display:none;margin-top:10px">
+      <div><table id="cmpTabla"></table></div>
+      <div class="barras" id="cmpBarras"></div>
+    </div>
+  </div>
+</section>
+<script>
+const ANCHO=520, MED=ANCHO/2, CALLE=64, PARE=MED-CALLE/2-24, PASO=0.05;
+const DETECTOR=90;
+const freno=60, velLateral=14, velPeaton=6, velLento=2.5;
+let verdeMin=8, verdeMax=45, rojoMax=90, verdeFijo=25, ambar=3, todoRojo=2;
+const tipos={
+  moto:{peso:.5,largo:10,ancho:6,vmax:50,acel:40,color:'#f39c12'},
+  auto:{peso:1,largo:18,ancho:11,vmax:50,acel:22,color:'#2e86de'},
+  combi:{peso:2.5,largo:34,ancho:13,vmax:45,acel:10,color:'#8e44ad'},
+  ambulancia:{peso:1,largo:24,ancho:12,vmax:70,acel:26,color:'#ecf0f1',alterno:'#e74c3c',emerg:1},
+  bombero:{peso:1,largo:36,ancho:13,vmax:65,acel:14,color:'#d63031',alterno:'#f1c40f',emerg:1},
+  policia:{peso:1,largo:18,ancho:11,vmax:70,acel:32,color:'#0984e3',alterno:'#d63031',emerg:1}
+};
+const el=id=>document.getElementById(id);
+let sim, modo='int', pausa=false, silencio=false, azarLlegada=Math.random;
+const calleDe=s=>s%2, lado=[-1,1,1,-1];
+
+function leerTiempos(){
+  verdeMin=+el('gmin').value; verdeMax=+el('gmax').value; rojoMax=+el('mred').value;
+  verdeFijo=+el('fix').value; ambar=+el('amb').value; todoRojo=+el('tod').value;
+}
+function azar(s,ancho){
+  const a=ancho/2+1, b=CALLE/2-ancho/2-1;
+  return lado[s]>0 ? a+Math.random()*(b-a) : -b+Math.random()*(b-a);
+}
+function punto(s,u,l){
+  return s===0?[MED+l,u] : s===1?[u,MED+l] : s===2?[MED+l,ANCHO-u] : [ANCHO-u,MED+l];
+}
+function nuevoSim(){
+  return {t:0, via:[[],[],[],[]], espera:[[],[],[],[]], peat:[[],[],[],[]], cruzaron:0, esperaPeat:0,
+    atendidos:0, sumaParado:0, ultEmerg:null, esperasEmerg:[],
+    sem:{fase:'V', verde:0, sig:1, tiempo:0, desde:[0,0], emActiva:0}};
+}
+function iniciar(){
+  sim=nuevoSim();
+  el('log').innerHTML='';
+}
+function anotar(m){
+  if(silencio) return;
+  const l=el('log');
+  l.innerHTML=`<div>${sim.t.toFixed(0)} s: ${m}</div>`+l.innerHTML;
+  while(l.children.length>30) l.lastChild.remove();
+}
+function carga(g){
+  let n=0;
+  [g,g+2].forEach(s=>{
+    sim.via[s].forEach(v=>{ if(!v.cruzo) n+=tipos[v.tipo].peso; });
+    sim.espera[s].forEach(k=>n+=tipos[k].peso);
+  });
+  return n;
+}
+// Carga de los vehículos que están cerca de la línea de pare (lo que "ve" el detector).
+function cargaCerca(g){
+  let n=0;
+  [g,g+2].forEach(s=>sim.via[s].forEach(v=>{ if(!v.cruzo && v.pos>PARE-DETECTOR) n+=tipos[v.tipo].peso; }));
+  return n;
+}
+function cuenta(g){
+  return [g,g+2].reduce((n,s)=>n+sim.via[s].filter(v=>!v.cruzo).length+sim.espera[s].length,0);
+}
+function luz(s){
+  const c=sim.sem;
+  return c.fase==='T' ? 'R' : (c.verde===calleDe(s) ? c.fase : 'R');
+}
+function calleEmergencia(){
+  let mejor=-1, bp=-1;
+  for(let s=0;s<4;s++){
+    if(sim.espera[s].some(k=>tipos[k].emerg) && bp<0){ mejor=calleDe(s); bp=0; }
+    sim.via[s].forEach(v=>{
+      const t=tipos[v.tipo];
+      if(t.emerg && v.pos-t.largo<=PARE && v.pos>bp){ mejor=calleDe(s); bp=v.pos; }
+    });
+  }
+  return mejor;
+}
+function llegan(){
+  for(let s=0;s<4;s++){
+    const p='ab'[calleDe(s)];
+    [['a','auto'],['m','moto'],['c','combi']].forEach(([k,ty])=>{
+      if(azarLlegada() < +el(p+k).value/60*PASO) sim.espera[s].push(ty);
+    });
+  }
+}
+function entrar(s){
+  const q=sim.espera[s]; if(!q.length) return;
+  const ty=q[0], d=tipos[ty], L=d.largo, lat=azar(s,d.ancho);
+  if(sim.via[s].some(v=>v.pos-tipos[v.tipo].largo < L+6 && Math.abs(v.lat-lat) < (tipos[v.tipo].ancho+d.ancho)/2+2)) return;
+  q.shift();
+  sim.via[s].push({tipo:ty, via:s, pos:L, vel:20, lat, meta:lat, cambio:Math.random()*2, cruzo:false, parado:0});
+}
+function controlar(){
+  const c=sim.sem;
+  c.tiempo+=PASO;
+  for(let s=0;s<2;s++) c.desde[s]=(c.fase==='V'&&c.verde===s) ? 0 : c.desde[s]+PASO;
+  const e = modo==='int' ? calleEmergencia() : -1;
+  if(e>=0){
+    if(c.fase==='V'){
+      if(c.verde===e){
+        if(!c.emActiva){ c.emActiva=1; anotar('🚨 Emergencia: verde se mantiene en calle '+'AB'[e]); }
+        return;
+      }
+      c.fase='A'; c.tiempo=0; c.sig=e;
+      anotar('🚨 Emergencia en calle '+'AB'[e]+': se le da paso');
+      return;
+    }
+    c.sig=e;
+  } else if(c.emActiva){
+    c.emActiva=0; anotar('Emergencia atendida: vuelve el control normal');
+  }
+  if(c.fase==='A'){
+    if(c.tiempo>=ambar){ c.fase='T'; c.tiempo=0; }
+    return;
+  }
+  if(c.fase==='T'){
+    if(c.tiempo>=todoRojo){
+      c.fase='V'; c.verde=c.sig; c.tiempo=0;
+      if(modo==='int') anotar(`Verde para calle ${'AB'[c.verde]} (carga A ${carga(0).toFixed(1)} y B ${carga(1).toFixed(1)})`);
+    }
+    return;
+  }
+  const o=1-c.verde;
+  if(modo==='fij'){
+    if(c.tiempo>=verdeFijo){ c.fase='A'; c.tiempo=0; c.sig=o; }
+    return;
+  }
+  if(c.tiempo<verdeMin) return;
+  const lc=carga(c.verde), lo=carga(o), cerca=cargaCerca(c.verde);
+  if(lo>0){
+    if(lc===0 || cerca===0 || c.tiempo>=verdeMax || c.desde[o]>=rojoMax){
+      c.fase='A'; c.tiempo=0; c.sig=o;
+    }
+  } else if(c.verde===1 && lc===0){
+    c.fase='A'; c.tiempo=0; c.sig=0;
+  }
+}
+function libreAdelante(v,lat){
+  const d=tipos[v.tipo]; let g=1e9;
+  sim.via[v.via].forEach(o=>{
+    if(o===v) return;
+    const od=tipos[o.tipo];
+    if(Math.abs(o.lat-lat) < (od.ancho+d.ancho)/2+1.5){
+      const gg=o.pos-od.largo-v.pos;
+      if(gg>=-1 && gg<g) g=gg;
+    }
+  });
+  return g;
+}
+function ladoLibre(v,lat){
+  const d=tipos[v.tipo];
+  return !sim.via[v.via].some(o=>{
+    const od=tipos[o.tipo];
+    return o!==v && Math.abs(o.lat-lat) < (od.ancho+d.ancho)/2+1.5 && o.pos-od.largo < v.pos+4 && o.pos > v.pos-d.largo-4;
+  });
+}
+function mover(s){
+  const lista=sim.via[s], lz=luz(s);
+  lista.forEach(v=>{
+    const t=tipos[v.tipo], vl=velLateral*(v.tipo==='moto'?1.6:1);
+    v.cambio-=PASO;
+    if(v.cambio<=0){
+      v.cambio=(t.emerg?0.6:1+Math.random()*2.5)*(v.tipo==='moto'?0.6:1);
+      let mejor=v.meta, mg=libreAdelante(v,v.meta);
+      for(let k=0;k<3;k++){
+        const l=azar(s,t.ancho), g=libreAdelante(v,l);
+        if(g>mg+8 || (g>40 && Math.random()<.3)){ mejor=l; mg=g; }
+      }
+      v.meta=mejor;
+    }
+    const dl=Math.max(-vl*PASO, Math.min(vl*PASO, v.meta-v.lat));
+    if(dl!==0 && ladoLibre(v,v.lat+dl)) v.lat+=dl;
+    let gap=libreAdelante(v,v.lat);
+    const pasa=(lz==='V' || (lz==='A' && PARE-v.pos < v.vel*v.vel/(2*freno)+3)) && !sim.peat[s].some(p=>p.cruzando);
+    if(v.pos<PARE && !pasa) gap=Math.min(gap, PARE-v.pos);
+    const vt=Math.max(0, Math.min(t.vmax, (gap-4)/0.9));
+    v.vel+=Math.max(-freno*PASO, Math.min(t.acel*PASO, vt-v.vel));
+    v.pos+=Math.min(v.vel*PASO, Math.max(0,gap-1));
+    if(!v.cruzo && v.vel<3) v.parado+=PASO;
+    if(!v.cruzo && v.pos>=PARE){
+      v.cruzo=true; sim.atendidos++; sim.sumaParado+=v.parado;
+      if(t.emerg){ sim.ultEmerg=v.parado; sim.esperasEmerg.push(v.parado); }
+    }
+  });
+  sim.via[s]=lista.filter(v=>v.pos<ANCHO+tipos[v.tipo].largo);
+}
+function caminar(){
+  const c=sim.sem;
+  for(let k=0;k<4;k++){
+    [['pn',0],['ps',1]].forEach(([id,lento])=>{
+      if(sim.peat[k].length<14 && azarLlegada() < +el(id).value/60*PASO){
+        const dir=azarLlegada()<.5?-1:1;
+        sim.peat[k].push({lento, dir, x:-dir*(CALLE/2+5), j:(azarLlegada()*2-1)*5, cruzando:false, espera:0});
+      }
+    });
+    const g=calleDe(k), sale=c.fase==='V' && c.verde!==g && c.desde[g]>=6;
+    sim.peat[k]=sim.peat[k].filter(p=>{
+      if(!p.cruzando){ p.espera+=PASO; if(sale) p.cruzando=true; return true; }
+      p.x+=p.dir*(p.lento?velLento:velPeaton)*PASO;
+      if(p.dir*p.x>=CALLE/2+5){ sim.cruzaron++; sim.esperaPeat+=p.espera; return false; }
+      return true;
+    });
+  }
+}
+function paso(){
+  sim.t+=PASO;
+  llegan();
+  for(let s=0;s<4;s++) entrar(s);
+  controlar();
+  caminar();
+  for(let s=0;s<4;s++) mover(s);
+}
+function panel(){
+  const c=sim.sem, e=calleEmergencia();
+  let st=modo==='int' ? 'Modo inteligente. ' : 'Modo automático (tiempo fijo, no detecta). ';
+  st+= c.fase==='V' ? `Verde en calle ${'AB'[c.verde]} (${c.tiempo.toFixed(0)} s).` : c.fase==='A' ? `Ámbar en calle ${'AB'[c.verde]}.` : 'Todo en rojo un momento.';
+  if(e>=0) st+=' 🚨 Emergencia en calle '+'AB'[e]+(modo==='int' ? ': tiene prioridad.' : ': este modo no la detecta.');
+  el('estado').textContent=st;
+  el('wP').textContent=sim.atendidos ? (sim.sumaParado/sim.atendidos).toFixed(1)+' s' : '-';
+  el('sv').textContent=sim.atendidos;
+  el('qA').textContent=`${cuenta(0)} vehículos (carga ${carga(0).toFixed(1)})`;
+  el('qB').textContent=`${cuenta(1)} vehículos (carga ${carga(1).toFixed(1)})`;
+  el('eE').textContent=sim.ultEmerg==null ? '-' : sim.ultEmerg.toFixed(1)+' s';
+  const pe=sim.peat.flat();
+  el('pC').textContent=sim.cruzaron;
+  el('pW').textContent=sim.cruzaron ? (sim.esperaPeat/sim.cruzaron).toFixed(1)+' s' : '-';
+  el('pE').textContent=`${pe.filter(p=>!p.cruzando&&!p.lento).length} normales y ${pe.filter(p=>!p.cruzando&&p.lento).length} con dificultad`;
+}
+
+const lienzo=el('cv'), ctx=lienzo.getContext('2d');
+function semaforo(x,y,estado){
+  ctx.fillStyle='#222'; ctx.fillRect(x,y,22,58);
+  [['R','#e74c3c'],['A','#f1c40f'],['V','#2ecc71']].forEach(([k,col],i)=>{
+    ctx.beginPath(); ctx.arc(x+11,y+10+i*19,7,0,7);
+    ctx.fillStyle=estado===k?col:'#555'; ctx.fill();
+  });
+}
+function ajustar(){
+  const px=Math.round(lienzo.clientWidth*(window.devicePixelRatio||1));
+  if(px>0 && lienzo.width!==px){ lienzo.width=px; lienzo.height=px; }
+}
+function dibujar(){
+  ajustar();
+  ctx.setTransform(lienzo.width/ANCHO,0,0,lienzo.width/ANCHO,0,0);
+  ctx.fillStyle='#cfe3c8'; ctx.fillRect(0,0,ANCHO,ANCHO);
+  ctx.fillStyle='#555'; ctx.fillRect(MED-CALLE/2,0,CALLE,ANCHO); ctx.fillRect(0,MED-CALLE/2,ANCHO,CALLE);
+  ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.beginPath();
+  for(let s=0;s<4;s++){
+    const a=punto(s,PARE+3,0), b=punto(s,PARE+3,lado[s]*CALLE/2);
+    ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]);
+  }
+  ctx.stroke();
+  ctx.strokeStyle='#f1c40f'; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(MED,0); ctx.lineTo(MED,PARE); ctx.moveTo(MED,ANCHO-PARE); ctx.lineTo(MED,ANCHO);
+  ctx.moveTo(0,MED); ctx.lineTo(PARE,MED); ctx.moveTo(ANCHO-PARE,MED); ctx.lineTo(ANCHO,MED);
+  ctx.stroke();
+  ctx.fillStyle='#fff';
+  for(let s=0;s<4;s++) for(let l=-CALLE/2+2;l<CALLE/2-2;l+=8){
+    const a=punto(s,PARE+6,l), b=punto(s,PARE+20,l+4);
+    ctx.fillRect(Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.abs(b[0]-a[0]), Math.abs(b[1]-a[1]));
+  }
+  sim.via.forEach((lista,s)=>lista.forEach(v=>{
+    const t=tipos[v.tipo], L=t.largo, w=t.ancho;
+    ctx.fillStyle = t.emerg && Math.floor(sim.t*4)%2 ? t.alterno : t.color;
+    if(s===0) ctx.fillRect(MED+v.lat-w/2, v.pos-L, w, L);
+    else if(s===1) ctx.fillRect(v.pos-L, MED+v.lat-w/2, L, w);
+    else if(s===2) ctx.fillRect(MED+v.lat-w/2, ANCHO-v.pos, w, L);
+    else ctx.fillRect(ANCHO-v.pos, MED+v.lat-w/2, L, w);
+  }));
+  sim.peat.forEach((lista,s)=>lista.forEach(p=>{
+    const q=punto(s,PARE+13+p.j,p.x);
+    ctx.beginPath(); ctx.arc(q[0],q[1],p.lento?3.5:3,0,7);
+    ctx.fillStyle=p.lento?'#e84393':'#1d2733'; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+  }));
+  semaforo(MED-CALLE/2-30, PARE-60, luz(0));
+  semaforo(PARE-60, MED+CALLE/2+8, luz(1));
+  semaforo(MED+CALLE/2+8, ANCHO-PARE+2, luz(2));
+  semaforo(ANCHO-PARE+2, MED-CALLE/2-66, luz(3));
+  ctx.fillStyle='#000'; ctx.font='bold 13px sans-serif';
+  ctx.fillText('Calle A (principal)', MED+CALLE/2+8, 20);
+  ctx.fillText('Calle B', 8, MED-CALLE/2-8);
+  [['moto','moto'],['auto','auto'],['combi','combi o bus'],['ambulancia','emergencia']].forEach(([k,n],i)=>{
+    ctx.fillStyle=tipos[k].color; ctx.fillRect(ANCHO-130,ANCHO-126+i*18,12,12);
+    ctx.strokeStyle='#999'; ctx.lineWidth=1; ctx.strokeRect(ANCHO-130,ANCHO-126+i*18,12,12);
+    ctx.fillStyle='#000'; ctx.font='12px sans-serif'; ctx.fillText(n,ANCHO-112,ANCHO-116+i*18);
+  });
+  [['#1d2733','peatón'],['#e84393','peatón lento']].forEach(([col,n],i)=>{
+    ctx.beginPath(); ctx.arc(ANCHO-124,ANCHO-120+(4+i)*18,4,0,7); ctx.fillStyle=col; ctx.fill();
+    ctx.fillStyle='#000'; ctx.fillText(n,ANCHO-112,ANCHO-116+(4+i)*18);
+  });
+}
+
+function etiquetas(){
+  document.querySelectorAll('input[type=range]').forEach(e=>el('v'+e.id).textContent=e.value);
+  leerTiempos();
+}
+document.querySelectorAll('input[type=range]').forEach(e=>e.addEventListener('input',etiquetas));
+function cambiarModo(m){
+  modo=m;
+  el('mInt').className=m==='int'?'activo':'';
+  el('mFij').className=m==='fij'?'activo':'';
+  anotar('Modo: '+(m==='int'?'inteligente':'automático (tiempo fijo)'));
+}
+el('mInt').onclick=()=>cambiarModo('int');
+el('mFij').onclick=()=>cambiarModo('fij');
+document.querySelectorAll('[data-veh]').forEach(b=>b.onclick=()=>{
+  const g=+el('emS').value, s=g+2*(+el('emD').value);
+  sim.espera[s].unshift(b.dataset.veh);
+  anotar(`Entra ${b.textContent.trim()} por la calle ${'AB'[g]} (${['norte→sur','oeste→este','sur→norte','este→oeste'][s]})`);
+});
+el('pau').onclick=()=>{ pausa=!pausa; el('pau').textContent=pausa?'Seguir':'Pausar'; };
+el('rst').onclick=iniciar;
+
+// --- Intersecciones predefinidas ---
+el('inter').innerHTML+=INTERSECCIONES.map(i=>`<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+function cargarInter(id){
+  const i=porId(id); if(!i) return;
+  Object.entries(i.flujo).forEach(([k,v])=>el(k).value=v);
+  etiquetas(); iniciar(); anotar('Intersección: '+i.nombre);
+}
+el('inter').onchange=()=>cargarInter(el('inter').value);
+
+// --- Comparación inteligente vs. tiempo fijo con el mismo tráfico ---
+function semilla(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function correr(m, seg, sem){
+  const antes={sim, modo, rand:Math.random, lleg:azarLlegada, silencio};
+  modo=m; silencio=true; Math.random=semilla(sem+1); azarLlegada=semilla(sem); sim=nuevoSim();
+  const pasos=Math.round(seg/PASO), ambulancias=[Math.round(pasos*.3), Math.round(pasos*.7)];
+  let maxCola=0;
+  try{
+    for(let n=0;n<pasos;n++){
+      if(ambulancias.includes(n)) sim.espera[n===ambulancias[0]?1:0].unshift('ambulancia');
+      paso();
+      if(n%20===0) maxCola=Math.max(maxCola, cuenta(0)+cuenta(1));
+    }
+    const pe=sim.peat.flat().filter(p=>!p.cruzando);
+    return {
+      espera: sim.atendidos ? sim.sumaParado/sim.atendidos : 0,
+      atendidos: sim.atendidos,
+      cola: cuenta(0)+cuenta(1),
+      maxCola,
+      peatones: sim.cruzaron ? sim.esperaPeat/sim.cruzaron : 0,
+      cruzaron: sim.cruzaron,
+      lentosEsperando: pe.filter(p=>p.lento).length,
+      emergencia: sim.esperasEmerg.length ? sim.esperasEmerg.reduce((a,b)=>a+b,0)/sim.esperasEmerg.length : null
+    };
+  } finally {
+    sim=antes.sim; modo=antes.modo; Math.random=antes.rand; azarLlegada=antes.lleg; silencio=antes.silencio;
+  }
+}
+let ultimaCmp=null;
+function comparar(){
+  const seg=+el('dur').value, sem=Math.floor(Math.random()*1e9);
+  const int=correr('int',seg,sem), fij=correr('fij',seg,sem);
+  const mejora=fij.espera ? (fij.espera-int.espera)/fij.espera*100 : 0;
+  const flujo={}; ['aa','am','ac','ba','bm','bc','pn','ps'].forEach(k=>flujo[k]=+el(k).value);
+  const i=porId(el('inter').value);
+  ultimaCmp={id:Date.now(), fecha:Date.now(), inter:i?i.id:null, nombre:i?i.nombre:'Personalizada', duracion:seg,
+    flujo, tiempos:{verdeMin,verdeMax,rojoMax,verdeFijo,ambar,todoRojo}, int, fij, mejora};
+  mostrarCmp(ultimaCmp);
+}
+function mostrarCmp(c){
+  const f=(v,u)=>v==null?'-':v.toFixed(1)+u;
+  const filas=[
+    ['Espera promedio de vehículos','espera',' s',1],
+    ['Vehículos atendidos','atendidos','',-1],
+    ['Vehículos en espera al final','cola','',1],
+    ['Cola máxima','maxCola','',1],
+    ['Espera promedio de peatones','peatones',' s',1],
+    ['Espera de ambulancias','emergencia',' s',1]
+  ];
+  el('cmpTabla').innerHTML='<tr><th>Indicador</th><th>Inteligente</th><th>Tiempo fijo</th></tr>'+filas.map(([n,k,u,menor])=>{
+    const a=c.int[k], b=c.fij[k], gana=a==null||b==null||a===b ? 0 : ((a<b)===(menor>0) ? 1 : 2);
+    const fmt=v=>u ? f(v,u) : (v==null?'-':Math.round(v));
+    return `<tr><td>${n}</td><td class="${gana===1?'ganador':''}">${fmt(a)}</td><td class="${gana===2?'ganador':''}">${fmt(b)}</td></tr>`;
+  }).join('');
+  const max=Math.max(c.int.espera,c.fij.espera,1);
+  const barra=(t,v,col)=>`<div class="fila"><span class="nombre">${t}</span><span class="pista"><span class="relleno" style="display:block;width:${v/max*100}%;background:${col}"></span></span><span class="num">${v.toFixed(1)} s</span></div>`;
+  el('cmpBarras').innerHTML=`<b>Espera promedio de vehículos</b>`+barra('Inteligente',c.int.espera,'#16804a')+barra('Tiempo fijo',c.fij.espera,'#c0392b')+
+    `<p style="font-size:15px">${c.mejora>=0?`El semáforo inteligente reduce la espera en <b>${c.mejora.toFixed(0)}%</b>.`:`En este caso el tiempo fijo esperó <b>${((c.int.espera-c.fij.espera)/c.int.espera*100).toFixed(0)}%</b> menos.`}</p>
+    <p class="nota">${esc(c.nombre)} · ${c.duracion/60} minutos simulados.</p>`;
+  el('cmpRes').style.display='grid';
+  el('guardarCmp').disabled=false;
+  el('cmpEstado').textContent='';
+}
+el('cmp').onclick=()=>{
+  el('cmpEstado').textContent='Calculando…'; el('cmp').disabled=true;
+  setTimeout(()=>{ try{ comparar(); } finally { el('cmp').disabled=false; } },30);
+};
+el('guardarCmp').onclick=()=>{
+  if(!ultimaCmp) return;
+  const l=simulaciones(); l.push(ultimaCmp); guardar('sv_simulaciones',l);
+  el('guardarCmp').disabled=true;
+  el('cmpEstado').innerHTML='Guardado. <a href="index.html">Ver dashboard</a> · <a href="reportes.html">Ver reporte</a>';
+};
+
+iniciar(); etiquetas();
+const pedida=new URLSearchParams(location.search).get('i');
+if(porId(pedida)){ el('inter').value=pedida; cargarInter(pedida); }
+let ultimo=0, acum=0;
+function ciclo(ts){
+  const dt=Math.min(0.25,(ts-ultimo)/1000);
+  ultimo=ts;
+  if(!pausa){
+    acum+=dt*+el('sp').value;
+    while(acum>=PASO){ paso(); acum-=PASO; }
+  }
+  panel(); dibujar();
+  requestAnimationFrame(ciclo);
+}
+requestAnimationFrame(ciclo);
+</script>
+</body>
+</html>

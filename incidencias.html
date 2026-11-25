@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incidencias · SemáforoVivo Lima</title>
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<script src="js/comun.js"></script>
+<script>menu('incidencias.html');</script>
+<div class="contenido">
+  <h2>Panel de incidencias</h2>
+  <p class="nota">Registra problemas en la vía, asigna un responsable y actualiza su estado. Se guardan en este navegador.</p>
+  <div class="rejilla" style="grid-template-columns:minmax(260px,1fr) minmax(0,2fr)">
+    <form class="caja" id="form">
+      <h3>Nueva incidencia</h3>
+      <label>Intersección<select id="fInter"></select></label>
+      <label>Tipo<select id="fTipo"></select></label>
+      <label>Descripción<textarea id="fDesc" rows="3" required placeholder="¿Qué pasa?"></textarea></label>
+      <label>Responsable<input id="fResp" placeholder="Ej.: Inspector de turno"></label>
+      <label>Prioridad<select id="fPrio"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></label>
+      <button type="submit" class="verde">Registrar</button>
+    </form>
+    <div class="caja">
+      <h3>Incidencias registradas</h3>
+      <label style="max-width:220px">Mostrar<select id="filtro"><option value="">Todas</option><option value="abierta">Abiertas</option><option value="proceso">En proceso</option><option value="resuelta">Resueltas</option></select></label>
+      <div style="overflow-x:auto;margin-top:8px">
+      <table>
+        <thead><tr><th>Fecha</th><th>Intersección</th><th>Tipo y detalle</th><th>Prioridad</th><th>Responsable</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="tabla"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+$('fInter').innerHTML=INTERSECCIONES.map(i=>`<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+$('fTipo').innerHTML=TIPOS_INCIDENCIA.map(t=>`<option>${t}</option>`).join('');
+const pre=new URLSearchParams(location.search).get('i'); if(porId(pre)) $('fInter').value=pre;
+let lista=incidencias();
+function pintar(){
+  const f=$('filtro').value;
+  const v=lista.filter(x=>!f||x.estado===f).sort((a,b)=>b.creada-a.creada);
+  $('tabla').innerHTML=v.length ? v.map(x=>`<tr>
+    <td>${fecha(x.creada)}</td><td>${esc(porId(x.inter)?.nombre||x.inter)}</td>
+    <td><b>${esc(x.tipo)}</b><br>${esc(x.desc)}</td><td>${esc(x.prio)}</td>
+    <td><input data-resp="${x.id}" value="${esc(x.resp)}" style="min-width:120px"></td>
+    <td><select data-est="${x.id}">${Object.entries(ESTADOS).map(([k,t])=>`<option value="${k}" ${k===x.estado?'selected':''}>${t}</option>`).join('')}</select>
+      <span class="etq e-${x.estado}" style="margin-top:4px">${ESTADOS[x.estado]}</span></td>
+    <td><button class="rojo" data-borrar="${x.id}">Borrar</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="vacio">No hay incidencias.</td></tr>';
+  document.querySelectorAll('[data-est]').forEach(s=>s.onchange=()=>cambiar(+s.dataset.est,{estado:s.value}));
+  document.querySelectorAll('[data-resp]').forEach(s=>s.onchange=()=>cambiar(+s.dataset.resp,{resp:s.value.trim()}));
+  document.querySelectorAll('[data-borrar]').forEach(b=>b.onclick=()=>{ if(confirm('¿Borrar esta incidencia?')){ lista=lista.filter(x=>x.id!==+b.dataset.borrar); guardar('sv_incidencias',lista); pintar(); } });
+}
+function cambiar(id,cambios){
+  const x=lista.find(x=>x.id===id); Object.assign(x,cambios,{actualizada:Date.now()});
+  guardar('sv_incidencias',lista); pintar();
+}
+$('form').onsubmit=e=>{
+  e.preventDefault();
+  lista.push({id:Math.max(0,...lista.map(x=>x.id))+1, inter:$('fInter').value, tipo:$('fTipo').value,
+    desc:$('fDesc').value.trim(), resp:$('fResp').value.trim(), prio:$('fPrio').value, estado:'abierta', creada:Date.now()});
+  guardar('sv_incidencias',lista);
+  $('fDesc').value=''; $('fResp').value='';
+  pintar();
+};
+$('filtro').onchange=pintar;
+pintar();
+</script>
+</body>
+</html>
